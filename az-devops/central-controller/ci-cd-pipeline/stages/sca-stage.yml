@@ -1,0 +1,17 @@
+stages:
+- stage: SCA
+  displayName: Dependency Scan
+  dependsOn: RepoCheckout
+  jobs:
+  - job: SCAScan
+    steps:
+    - checkout: none
+    - download: current
+      artifact: $(Build.Repository.Name)
+    - script: |
+        pip install --quiet --break-system-packages pip-audit safety
+        echo "=== pip-audit ==="
+        pip-audit -r $(Pipeline.Workspace)/$(Build.Repository.Name)/requirements.txt
+        echo "=== Safety ==="
+        safety scan --file $(Pipeline.Workspace)/$(Build.Repository.Name)/requirements.txt --output text || true
+      displayName: Run pip-audit + Safety

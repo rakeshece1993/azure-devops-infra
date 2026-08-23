@@ -1,0 +1,16 @@
+stages:
+- stage: Lint
+  displayName: Lint & Format Check
+  dependsOn: RepoCheckout
+  jobs:
+  - job: LintCheck
+    steps:
+    - checkout: none
+    - download: current
+      artifact: $(Build.Repository.Name)
+    - script: |
+        pip install --quiet --break-system-packages ruff black isort
+        ruff check $(Pipeline.Workspace)/$(Build.Repository.Name)
+        black --check $(Pipeline.Workspace)/$(Build.Repository.Name)
+        isort --check-only $(Pipeline.Workspace)/$(Build.Repository.Name)
+      displayName: Run ruff + black + isort

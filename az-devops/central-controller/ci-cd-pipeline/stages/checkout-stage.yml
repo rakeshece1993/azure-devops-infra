@@ -1,0 +1,9 @@
+stages:
+- stage: RepoCheckout
+  displayName: Checkout Repository
+  jobs:
+  - job: Checkout
+    steps:
+    - checkout: self
+    - publish: $(System.DefaultWorkingDirectory)
+      artifact: $(Build.Repository.Name)

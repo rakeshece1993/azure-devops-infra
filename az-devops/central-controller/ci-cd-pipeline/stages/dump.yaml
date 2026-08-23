@@ -1,0 +1,305 @@
+# Full CI/CD Pipeline - Python Web App
+trigger:
+- main
+
+pr:
+- main
+
+pool:
+  name: dev-aec-slave
+
+variables:
+  IMAGE_NAME: pythonapp
+  IMAGE_TAG: $(Build.BuildId)
+  SONAR_PROJECT_KEY: python-webapp
+
+stages:
+
+# ── 1. Checkout ───────────────────────────────────────────────────────────────
+- stage: RepoCheckout
+  displayName: Checkout Repository
+  jobs:
+  - job: Checkout
+    steps:
+    - checkout: self
+    - publish: $(System.DefaultWorkingDirectory)
+      artifact: source-code
+
+# ── 2-5. Parallel Scans (all depend on RepoCheckout, run in parallel) ─────────
+- stage: Lint
+  displayName: Lint & Format Check
+  dependsOn: RepoCheckout
+  jobs:
+  - job: LintCheck
+    steps:
+    - checkout: none
+    - download: current
+      artifact: source-code
+    - script: |
+        pip install --quiet --break-system-packages ruff black isort
+        ruff check $(Pipeline.Workspace)/source-code
+        black --check $(Pipeline.Workspace)/source-code
+        isort --check-only $(Pipeline.Workspace)/source-code
+      displayName: Run linters
+
+- stage: Gitleaks
+  displayName: Secrets Scan
+  dependsOn: RepoCheckout
+  jobs:
+  - job: GitleaksScan
+    steps:
+    - checkout: none
+    - download: current
+      artifact: source-code
+    - script: |
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "x86_64" ]; then
+          GITLEAKS_ARCH="x64"
+        elif [ "$ARCH" = "aarch64" ]; then
+          GITLEAKS_ARCH="arm64"
+        else
+          GITLEAKS_ARCH="armv7"
+        fi
+        wget -q https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_${GITLEAKS_ARCH}.tar.gz
+        tar -xzf gitleaks_8.18.4_linux_${GITLEAKS_ARCH}.tar.gz
+        ./gitleaks detect \
+          --source $(Pipeline.Workspace)/source-code \
+          --report-format json \
+          --report-path gitleaks-report.json \
+          --no-git
+      displayName: Run Gitleaks
+    - publish: gitleaks-report.json
+      artifact: gitleaks-report
+      condition: always()
+
+- stage: SAST
+  displayName: SAST Scan
+  dependsOn: RepoCheckout
+  jobs:
+  - job: SASTScan
+    steps:
+    - checkout: none
+    - download: current
+      artifact: source-code
+    - script: |
+        pip install --quiet --break-system-packages bandit semgrep
+        echo "=== Bandit ==="
+        bandit -r $(Pipeline.Workspace)/source-code -ll -f txt
+        echo "=== Semgrep ==="
+        semgrep --config=auto $(Pipeline.Workspace)/source-code --text
+      displayName: Run Bandit + Semgrep
+
+- stage: SCA
+  displayName: Dependency Scan
+  dependsOn: RepoCheckout
+  jobs:
+  - job: SCAScan
+    steps:
+    - checkout: none
+    - download: current
+      artifact: source-code
+    - script: |
+        pip install --quiet --break-system-packages pip-audit safety
+        echo "=== pip-audit ==="
+        pip-audit -r $(Pipeline.Workspace)/source-code/requirements.txt
+        echo "=== Safety ==="
+        safety scan --file $(Pipeline.Workspace)/source-code/requirements.txt --output text || true
+      displayName: Run pip-audit + Safety
+
+# ── 6. Unit Tests ─────────────────────────────────────────────────────────────
+- stage: UnitTests
+  displayName: Unit Tests & Coverage
+  dependsOn:
+  - Lint
+  - Gitleaks
+  - SAST
+  - SCA
+  condition: |
+    and(
+      succeeded('Lint'),
+      succeeded('Gitleaks'),
+      succeeded('SAST'),
+      succeeded('SCA')
+    )
+  jobs:
+  - job: RunTests
+    steps:
+    - checkout: none
+    - download: current
+      artifact: source-code
+    - script: |
+        pip install --quiet --break-system-packages \
+          -r $(Pipeline.Workspace)/source-code/requirements.txt \
+          pytest pytest-cov
+        cd $(Pipeline.Workspace)/source-code
+        pytest tests/ --cov=. --cov-report=xml:coverage.xml -v
+      displayName: Run pytest with coverage
+    - publish: $(Pipeline.Workspace)/source-code/coverage.xml
+      artifact: coverage-report
+
+# ── 7. SonarQube ──────────────────────────────────────────────────────────────
+- stage: SonarQube
+  displayName: SonarQube Analysis
+  dependsOn: UnitTests
+  condition: false
+  jobs:
+  - job: SonarScan
+    steps:
+    - checkout: none
+    - download: current
+      artifact: source-code
+    - download: current
+      artifact: coverage-report
+    - script: |
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "aarch64" ]; then
+          SONAR_ARCH="linux-aarch64"
+        else
+          SONAR_ARCH="linux-x64"
+        fi
+        wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-${SONAR_ARCH}.zip
+        unzip -q sonar-scanner-cli-6.2.1.4610-${SONAR_ARCH}.zip
+        export PATH=$PATH:$(pwd)/sonar-scanner-6.2.1.4610-${SONAR_ARCH}/bin
+        cp $(Pipeline.Workspace)/coverage-report/coverage.xml \
+           $(Pipeline.Workspace)/source-code/
+        sonar-scanner \
+          -Dsonar.projectKey=$(SONAR_PROJECT_KEY) \
+          -Dsonar.sources=$(Pipeline.Workspace)/source-code \
+          -Dsonar.python.coverage.reportPaths=coverage.xml \
+          -Dsonar.host.url=$SONAR_HOST_URL \
+          -Dsonar.login=$SONAR_TOKEN
+      displayName: Run SonarQube + Quality Gate
+      env:
+        SONAR_TOKEN: $(SONAR_TOKEN)
+        SONAR_HOST_URL: $(SONAR_HOST_URL)
+
+# ── 8. Build Package ──────────────────────────────────────────────────────────
+- stage: BuildPackage
+  displayName: Build Application Package
+  dependsOn: UnitTests
+  condition: false
+  jobs:
+  - job: Build
+    steps:
+    - checkout: none
+    - download: current
+      artifact: source-code
+    - script: |
+        pip install --quiet --break-system-packages build
+        cd $(Pipeline.Workspace)/source-code
+        python3 -m build
+      displayName: Build wheel/sdist
+    - publish: $(Pipeline.Workspace)/source-code/dist
+      artifact: app-package
+
+# ── 9. Docker Build ───────────────────────────────────────────────────────────
+- stage: DockerBuild
+  displayName: Docker Image Build
+  dependsOn: UnitTests
+  condition: succeeded()
+  jobs:
+  - job: BuildImage
+    steps:
+    - checkout: none
+    - download: current
+      artifact: source-code
+    - script: |
+        docker buildx create --use --name multiarch-builder || true
+        docker buildx build \
+          --platform linux/amd64 \
+          -t $(IMAGE_NAME):$(IMAGE_TAG) \
+          --load \
+          $(Pipeline.Workspace)/source-code
+      displayName: Build Docker image
+
+# ── 10. Trivy Scan ────────────────────────────────────────────────────────────
+- stage: TrivyScan
+  displayName: Container Scan (Trivy)
+  dependsOn: DockerBuild
+  condition: succeeded()
+  jobs:
+  - job: TrivyScan
+    steps:
+    - checkout: none
+    - script: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b $(Agent.TempDirectory)
+        $(Agent.TempDirectory)/trivy image \
+          --exit-code 1 \
+          --severity HIGH,CRITICAL \
+          --ignore-unfixed \
+          --format table \
+          $(IMAGE_NAME):$(IMAGE_TAG)
+      displayName: Scan image with Trivy
+
+
+
+# ── 11. Push to ACR ───────────────────────────────────────────────────────────
+- stage: PushImage
+  displayName: Push to ACR
+  dependsOn: TrivyScan
+  condition: succeeded()
+  variables:
+  - group: az-keyvault-authn
+  jobs:
+  - job: PushToACR
+    steps:
+    - checkout: none
+    - script: |
+        az login --service-principal \
+          -u $(tk-dev-sp-id) \
+          -p $(tk-dev-sp-sec) \
+          --tenant $(tk-tenant-id)
+        az account set -s $(AEC_DEV_SUBS_ID)
+        az acr login --name $(ACR_NAME)
+        docker tag $(IMAGE_NAME):$(IMAGE_TAG) \
+          $(ACR_NAME).azurecr.io/$(IMAGE_NAME):$(IMAGE_TAG)
+        docker push $(ACR_NAME).azurecr.io/$(IMAGE_NAME):$(IMAGE_TAG)
+      displayName: Push image to ACR
+
+# ── 12. Deploy to AKS ─────────────────────────────────────────────────────────
+- stage: Deploy
+  displayName: Deploy to AKS
+  dependsOn: PushImage
+  condition: succeeded()
+  variables:
+  - group: az-keyvault-authn
+  jobs:
+  - job: DeployToAKS
+    steps:
+    - checkout: none
+    - script: |
+        az login --service-principal \
+          -u $(tk-dev-sp-id) \
+          -p $(tk-dev-sp-sec) \
+          --tenant $(tk-tenant-id)
+        az account set -s $(AEC_DEV_SUBS_ID)
+        az aks get-credentials \
+          --resource-group $(AKS_RESOURCE_GROUP) \
+          --name $(AKS_CLUSTER) \
+          --overwrite-existing
+        kubectl set image deployment/$(IMAGE_NAME) \
+          $(IMAGE_NAME)=$(ACR_NAME).azurecr.io/$(IMAGE_NAME):$(IMAGE_TAG)
+        kubectl rollout status deployment/$(IMAGE_NAME) --timeout=5m
+      displayName: Deploy to AKS
+
+# ── 13. Smoke & Integration Tests ─────────────────────────────────────────────
+- stage: SmokeTests
+  displayName: Smoke & Integration Tests
+  dependsOn: Deploy
+  condition: succeeded()
+  jobs:
+  - job: SmokeTest
+    steps:
+    - checkout: none
+    - script: |
+        echo "Running smoke tests against $APP_URL"
+        curl -sf $APP_URL/ | grep -q "message" && echo "/ endpoint OK" || exit 1
+        curl -sf $APP_URL/health | grep -q "healthy" && echo "/health endpoint OK" || exit 1
+        echo "All smoke tests passed"
+      displayName: Run smoke tests
+      env:
+        APP_URL: $(APP_URL)
+
+
+
+

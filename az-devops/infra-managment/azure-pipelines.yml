@@ -1,0 +1,17 @@
+trigger:
+- main
+
+pr:
+- main
+
+pool:
+  name: dev-aec-slave
+
+resources:
+  repositories:
+  - repository: central-controller
+    type: git
+    name: central-controller/central-controller
+    ref: refs/heads/main
+stages:
+- template: ci-cd-pipeline/pipeline.yml@central-controller

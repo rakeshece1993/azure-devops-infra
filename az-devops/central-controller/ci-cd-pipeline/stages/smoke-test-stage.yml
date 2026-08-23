@@ -1,0 +1,38 @@
+parameters:
+- name: appUrl
+  default: ''
+- name: healthPath
+  default: '/health'
+- name: retries
+  default: 5
+- name: retryDelay
+  default: 10
+
+stages:
+- stage: SmokeTests
+  displayName: Smoke Tests
+  dependsOn: Deploy
+  condition: succeeded()
+  jobs:
+  - job: SmokeTestJob
+    steps:
+    - checkout: none
+    - script: |
+        RETRIES=${{ parameters.retries }}
+        DELAY=${{ parameters.retryDelay }}
+        URL=$APP_URL${{ parameters.healthPath }}
+        echo "Checking $URL (up to $RETRIES attempts)"
+        for i in $(seq 1 $RETRIES); do
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL")
+          echo "Attempt $i: HTTP $STATUS"
+          if [ "$STATUS" = "200" ]; then
+            echo "Smoke test passed."
+            exit 0
+          fi
+          sleep $DELAY
+        done
+        echo "Smoke test failed after $RETRIES attempts."
+        exit 1
+      displayName: Health check smoke test
+      env:
+        APP_URL: ${{ parameters.appUrl }}

@@ -1,0 +1,29 @@
+parameters:
+- name: imageName
+  default: ''
+- name: imageTag
+  default: $(Build.BuildId)
+- name: containerRegistry
+  default: ''
+
+stages:
+- stage: PushImage
+  displayName: Push Image to Registry
+  dependsOn: TrivyScan
+  condition: succeeded()
+  variables:
+  - group: az-keyvault-authn
+  jobs:
+  - job: PushImageJob
+    steps:
+    - checkout: none
+    - script: |
+        az login --service-principal \
+          --username $(tk-dev-sp-id) \
+          --password $(tk-dev-sp-sec) \
+          --tenant $(tk-tenant-id)
+        az acr login --name ${{ parameters.containerRegistry }}
+        docker push ${{ parameters.containerRegistry }}/${{ parameters.imageName }}:${{ parameters.imageTag }}
+      displayName: Login to ACR and push image
+      env:
+        TK_DEV_SP_SEC: $(tk-dev-sp-sec)

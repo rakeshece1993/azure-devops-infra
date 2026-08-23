@@ -1,0 +1,13 @@
+stages:
+- template: stages/checkout-stage.yml
+- template: stages/lint-stage.yml
+- template: stages/gitleaks-stage.yml
+- template: stages/sast-stage.yml
+- template: stages/sca-stage.yml
+- template: stages/unit-test-stage.yml
+- template: stages/sonarqube-stage.yml
+- template: stages/docker-build-stage.yml
+- template: stages/trivy-stage.yml
+- template: stages/push-image-stage.yml
+- template: stages/deploy-stage.yml
+- template: stages/smoke-test-stage.yml

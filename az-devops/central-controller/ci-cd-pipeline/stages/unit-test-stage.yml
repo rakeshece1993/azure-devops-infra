@@ -1,0 +1,30 @@
+stages:
+- stage: UnitTests
+  displayName: Unit Tests & Coverage
+  dependsOn:
+  - Lint
+  - Gitleaks
+  - SAST
+  - SCA
+  condition: |
+    and(
+      succeeded('Lint'),
+      succeeded('Gitleaks'),
+      succeeded('SAST'),
+      succeeded('SCA')
+    )
+  jobs:
+  - job: RunTests
+    steps:
+    - checkout: none
+    - download: current
+      artifact: $(Build.Repository.Name)
+    - script: |
+        pip install --quiet --break-system-packages \
+          -r $(Pipeline.Workspace)/$(Build.Repository.Name)/requirements.txt \
+          pytest pytest-cov
+        cd $(Pipeline.Workspace)/$(Build.Repository.Name)
+        pytest tests/ --cov=. --cov-report=xml:coverage.xml -v
+      displayName: Run pytest with coverage
+    - publish: $(Pipeline.Workspace)/$(Build.Repository.Name)/coverage.xml
+      artifact: coverage-report

@@ -1,0 +1,34 @@
+parameters:
+- name: gitleaksVersion
+  default: '8.18.4'
+
+stages:
+- stage: Gitleaks
+  displayName: Secrets Scan
+  dependsOn: RepoCheckout
+  jobs:
+  - job: GitleaksScan
+    steps:
+    - checkout: none
+    - download: current
+      artifact: $(Build.Repository.Name)
+    - script: |
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "x86_64" ]; then
+          GITLEAKS_ARCH="x64"
+        elif [ "$ARCH" = "aarch64" ]; then
+          GITLEAKS_ARCH="arm64"
+        else
+          GITLEAKS_ARCH="armv7"
+        fi
+        wget -q https://github.com/gitleaks/gitleaks/releases/download/v${{ parameters.gitleaksVersion }}/gitleaks_${{ parameters.gitleaksVersion }}_linux_${GITLEAKS_ARCH}.tar.gz
+        tar -xzf gitleaks_${{ parameters.gitleaksVersion }}_linux_${GITLEAKS_ARCH}.tar.gz
+        ./gitleaks detect \
+          --source $(Pipeline.Workspace)/$(Build.Repository.Name) \
+          --report-format json \
+          --report-path gitleaks-report.json \
+          --no-git
+      displayName: Run Gitleaks
+    - publish: gitleaks-report.json
+      artifact: gitleaks-report
+      condition: always()

@@ -1,0 +1,45 @@
+parameters:
+- name: imageName
+  default: ''
+- name: imageTag
+  default: $(Build.BuildId)
+- name: containerRegistry
+  default: ''
+- name: k8sNamespace
+  default: default
+- name: k8sDeploymentName
+  default: ''
+- name: k8sContainerName
+  default: ''
+- name: k8sContextName
+  default: ''
+
+stages:
+- stage: Deploy
+  displayName: Deploy to Kubernetes
+  dependsOn: PushImage
+  condition: succeeded()
+  variables:
+  - group: az-keyvault-authn
+  jobs:
+  - job: DeployingApplication
+    steps:
+    - checkout: none
+    - script: |
+        az login --service-principal \
+          --username $(tk-dev-sp-id) \
+          --password $(tk-dev-sp-sec) \
+          --tenant $(tk-tenant-id)
+        az aks get-credentials \
+          --resource-group $(AKS_RESOURCE_GROUP) \
+          --name $(AKS_CLUSTER_NAME) \
+          --overwrite-existing
+        kubectl set image deployment/${{ parameters.k8sDeploymentName }} \
+          ${{ parameters.k8sContainerName }}=${{ parameters.containerRegistry }}/${{ parameters.imageName }}:${{ parameters.imageTag }} \
+          -n ${{ parameters.k8sNamespace }}
+        kubectl rollout status deployment/${{ parameters.k8sDeploymentName }} \
+          -n ${{ parameters.k8sNamespace }} \
+          --timeout=120s
+      displayName: Deploy image to AKS
+      env:
+        TK_DEV_SP_SEC: $(tk-dev-sp-sec)

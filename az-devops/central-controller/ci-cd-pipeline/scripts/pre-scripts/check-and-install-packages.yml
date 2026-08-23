@@ -1,0 +1,31 @@
+.check-and-install-packages:
+  - |
+    echo "Checking and installing common packages ..."
+    packages="jq curl git bash yq xmlstarlet"
+    
+    if [ -f /etc/alpine-release ]; then
+      echo "Detected Alpine Linux."
+      for pkg in $packages; do
+        if ! command -v $pkg >/dev/null 2>&1; then
+          echo "Installing $pkg ..."
+          apk add --no-cache $pkg > /dev/null
+        fi
+      done
+    elif [ -f /etc/debian_version ]; then
+      echo "Detected Debian/Ubuntu-based system."
+      apt-get update && apt-get install -y apt-utils > /dev/null
+      for pkg in $packages; do
+        if [ "$pkg" = "yq" ]; then
+          echo "Installing yq using the custom installation method..."
+          curl -LO "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
+          install -Dm755 yq_linux_amd64 /usr/local/bin/yq
+          rm yq_linux_amd64
+        elif ! command -v $pkg >/dev/null 2>&1; then
+          echo "Installing $pkg ..."
+          apt-get install -y $pkg > /dev/null
+        fi
+      done
+    else
+      echo "Unsupported Linux distribution."
+      exit 1
+    fi

@@ -1,0 +1,36 @@
+parameters:
+- name: imageName
+  default: ''
+- name: imageTag
+  default: $(Build.BuildId)
+- name: containerRegistry
+  default: ''
+- name: buildxVersion
+  default: '0.16.2'
+
+stages:
+- stage: DockerBuild
+  displayName: Docker Build
+  dependsOn: SonarQube
+  condition: succeeded()
+  jobs:
+  - job: BuildImage
+    steps:
+    - checkout: none
+    - download: current
+      artifact: $(Build.Repository.Name)
+    - script: |
+        mkdir -p ~/.docker/cli-plugins
+        wget -q https://github.com/docker/buildx/releases/download/v${{ parameters.buildxVersion }}/buildx-v${{ parameters.buildxVersion }}.linux-amd64 \
+          -O ~/.docker/cli-plugins/docker-buildx
+        chmod +x ~/.docker/cli-plugins/docker-buildx
+        docker buildx create --use --name ci-builder || true
+      displayName: Install docker buildx
+    - script: |
+        cd $(Pipeline.Workspace)/$(Build.Repository.Name)
+        docker buildx build \
+          --platform linux/amd64 \
+          --tag ${{ parameters.containerRegistry }}/${{ parameters.imageName }}:${{ parameters.imageTag }} \
+          --load \
+          .
+      displayName: Build Docker image (linux/amd64)

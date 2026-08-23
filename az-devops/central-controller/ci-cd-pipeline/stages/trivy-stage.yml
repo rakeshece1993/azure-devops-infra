@@ -1,0 +1,29 @@
+parameters:
+- name: imageName
+  default: ''
+- name: imageTag
+  default: $(Build.BuildId)
+- name: containerRegistry
+  default: ''
+- name: severities
+  default: 'CRITICAL,HIGH'
+
+stages:
+- stage: TrivyScan
+  displayName: Trivy Container Scan
+  dependsOn: DockerBuild
+  condition: succeeded()
+  jobs:
+  - job: TrivyScanJob
+    steps:
+    - checkout: none
+    - script: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+          | sh -s -- -b $(Agent.TempDirectory)
+        $(Agent.TempDirectory)/trivy image \
+          --severity ${{ parameters.severities }} \
+          --exit-code 1 \
+          --ignore-unfixed \
+          --format table \
+          ${{ parameters.containerRegistry }}/${{ parameters.imageName }}:${{ parameters.imageTag }}
+      displayName: Scan image with Trivy

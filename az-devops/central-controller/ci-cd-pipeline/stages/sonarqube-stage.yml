@@ -1,0 +1,39 @@
+parameters:
+- name: sonarProjectKey
+  default: ''
+
+stages:
+- stage: SonarQube
+  displayName: SonarQube Analysis
+  dependsOn: UnitTests
+  condition: succeeded()
+  jobs:
+  - job: SonarScan
+    steps:
+    - checkout: none
+    - download: current
+      artifact: $(Build.Repository.Name)
+    - download: current
+      artifact: coverage-report
+    - script: |
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "aarch64" ]; then
+          SONAR_ARCH="linux-aarch64"
+        else
+          SONAR_ARCH="linux-x64"
+        fi
+        wget -q https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-${SONAR_ARCH}.zip
+        unzip -q sonar-scanner-cli-6.2.1.4610-${SONAR_ARCH}.zip
+        export PATH=$PATH:$(pwd)/sonar-scanner-6.2.1.4610-${SONAR_ARCH}/bin
+        cp $(Pipeline.Workspace)/coverage-report/coverage.xml \
+           $(Pipeline.Workspace)/$(Build.Repository.Name)/
+        sonar-scanner \
+          -Dsonar.projectKey=${{ parameters.sonarProjectKey }} \
+          -Dsonar.sources=$(Pipeline.Workspace)/$(Build.Repository.Name) \
+          -Dsonar.python.coverage.reportPaths=coverage.xml \
+          -Dsonar.host.url=$SONAR_HOST_URL \
+          -Dsonar.login=$SONAR_TOKEN
+      displayName: Run SonarQube + Quality Gate
+      env:
+        SONAR_TOKEN: $(SONAR_TOKEN)
+        SONAR_HOST_URL: $(SONAR_HOST_URL)

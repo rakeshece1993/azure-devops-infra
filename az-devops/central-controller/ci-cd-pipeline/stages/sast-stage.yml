@@ -1,0 +1,17 @@
+stages:
+- stage: SAST
+  displayName: SAST Scan
+  dependsOn: RepoCheckout
+  jobs:
+  - job: SASTScan
+    steps:
+    - checkout: none
+    - download: current
+      artifact: $(Build.Repository.Name)
+    - script: |
+        pip install --quiet --break-system-packages bandit semgrep
+        echo "=== Bandit ==="
+        bandit -r $(Pipeline.Workspace)/$(Build.Repository.Name) -ll -f txt
+        echo "=== Semgrep ==="
+        semgrep --config=auto $(Pipeline.Workspace)/$(Build.Repository.Name) --text
+      displayName: Run Bandit + Semgrep
