@@ -25,3 +25,4 @@ I have also documented the architecture, implementation approach, and learnings 
 
 Personal Website: https://rakeshece1993.wixsite.com/kernel
 Azure Infrastructure Architecture Blog: Azure Infrastructure Architecture
+https://rakeshece1993.wixsite.com/kernel/post/azure-infra-architecture
