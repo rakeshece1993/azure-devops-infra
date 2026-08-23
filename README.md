@@ -9,7 +9,7 @@ The Azure DevOps CI/CD Pipeline presentation explains how the CI/CD pipeline is 
 
 The related implementation and pipeline code are available in the az-devops directory.
 
-Presentation: Azure DevOps_CI-CD Pipeline.pptx
+Presentation: [Azure DevOps_CI-CD Pipeline.pptx](https://docs.google.com/presentation/d/1VmW50I6b-34x81XP3FiErL7lbcGuZeXR/edit?usp=sharing&ouid=114835598971837451116&rtpof=true&sd=true)
 Implementation: az-devops/
 **2. Terraform Plan for Azure Infrastructure**
 
@@ -23,6 +23,6 @@ I have worked on this project end-to-end, starting from platform and infrastruct
 
 I have also documented the architecture, implementation approach, and learnings in blogs on my personal website:
 
-Personal Website: https://rakeshece1993.wixsite.com/kernel
-Azure Infrastructure Architecture Blog: Azure Infrastructure Architecture
-https://rakeshece1993.wixsite.com/kernel/post/azure-infra-architecture
+Personal Website: [https://lelonix.com](https://rakeshece1993.wixsite.com/kernel)
+Azure Infrastructure Architecture Blog: [Azure Infrastructure Architecture](https://rakeshece1993.wixsite.com/kernel/post/azure-infra-architecture)
+
