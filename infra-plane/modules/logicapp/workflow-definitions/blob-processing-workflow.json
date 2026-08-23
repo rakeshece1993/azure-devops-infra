@@ -1,0 +1,97 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "actions": {
+    "Call_to_Quarantine": {
+      "type": "Function",
+      "inputs": {
+        "method": "POST",
+        "body": {
+          "blobName": "@triggerBody()?['name']",
+          "blobProperties": "@triggerBody()?['properties']",
+          "containerName": "@triggerBody()?['containerInfo']?['name']"
+        },
+        "function": {
+          "connectionName": "azureFunctionOperation-4"
+        }
+      },
+      "runAfter": {}
+    },
+    "Call_to_fileValidator": {
+      "type": "Function",
+      "inputs": {
+        "method": "POST",
+        "body": "@body('Call_to_Quarantine')",
+        "function": {
+          "connectionName": "azureFunctionOperation-5"
+        }
+      },
+      "runAfter": {
+        "Call_to_Quarantine": [
+          "SUCCEEDED"
+        ]
+      }
+    },
+    "Is_File_Valid": {
+      "type": "If",
+      "expression": {
+        "and": [
+          {
+            "equals": [
+              "@outputs('Call_to_fileValidator')?['statusCode']",
+              200
+            ]
+          }
+        ]
+      },
+      "actions": {
+        "Call_UploadToPermanent": {
+          "type": "Function",
+          "inputs": {
+            "method": "POST",
+            "body": "@body('Call_to_Quarantine')",
+            "function": {
+              "connectionName": "azureFunctionOperation-6"
+            }
+          }
+        }
+      },
+      "else": {
+        "actions": {
+          "Call_fallback": {
+            "type": "Function",
+            "inputs": {
+              "method": "POST",
+              "body": "@body('Call_to_fileValidator')",
+              "function": {
+                "connectionName": "azureFunctionOperation-7"
+              }
+            }
+          }
+        }
+      },
+      "runAfter": {
+        "Call_to_fileValidator": [
+          "SUCCEEDED"
+        ]
+      }
+    }
+  },
+  "outputs": {},
+  "triggers": {
+    "When_a_blob_is_added_or_updated": {
+      "type": "ServiceProvider",
+      "inputs": {
+        "parameters": {
+          "path": "fleet-quarantine-container"
+        },
+        "serviceProviderConfiguration": {
+          "connectionName": "AzureBlob",
+          "operationId": "whenABlobIsAddedOrModified",
+          "serviceProviderId": "/serviceProviders/AzureBlob"
+        }
+      }
+    }
+  }
+}
+
